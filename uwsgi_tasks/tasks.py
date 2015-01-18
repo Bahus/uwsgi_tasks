@@ -346,6 +346,7 @@ class SignalTask(BaseTask):
         self._signal_id = None
 
     def signal_handler(self, signal):
+        self.args = (signal,)
         return self.execute_now()
 
     def execute_async(self):
