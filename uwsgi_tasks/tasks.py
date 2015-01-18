@@ -94,9 +94,8 @@ class TaskExecutor:
 class BaseTask(object):
     executor = None
 
-    def __init__(self, function, args=None, kwargs=None, wrapper=None, **setup):
+    def __init__(self, function, args=None, kwargs=None, **setup):
         self._function = None
-        self._wrapper = None
 
         if isinstance(function, basestring):
             self.function_name = function
@@ -110,7 +109,6 @@ class BaseTask(object):
         self.args = args or ()
         self.kwargs = kwargs or {}
         self.setup = setup or {}
-        self.wrapper = wrapper
 
     def __str__(self):
         return u'<Task: {} for "{}">'.format(self.__class__.__name__,
@@ -127,16 +125,10 @@ class BaseTask(object):
         return self.execute_async()
 
     def __getstate__(self):
-        if callable(self.wrapper):
-            wrapper_name = get_function_path(self.wrapper)
-        else:
-            wrapper_name = self.wrapper
-
         return {
             'function_name': self.function_name,
             'args': self.args,
             'kwargs': self.kwargs,
-            '_wrapper': wrapper_name,
             '_function': None,
             'setup': self.setup,
         }
@@ -145,26 +137,12 @@ class BaseTask(object):
         self.__dict__.update(state)
 
     @property
-    def wrapper(self):
-        if isinstance(self._wrapper, basestring):
-            self._wrapper = load_function(self._wrapper)
-
-        return self._wrapper
-
-    @wrapper.setter
-    def wrapper(self, value):
-        self._wrapper = get_function_path(value) if value else None
-
-    @property
     def function(self):
         if self._function is None:
             self._function = load_function(self.function_name)
         return self._function
 
     def execute_now(self):
-        if self.wrapper:
-            return self.wrapper(self.function)(*self.args, **self.kwargs)
-
         return self.function(*self.args, **self.kwargs)
 
     def execute_async(self):
@@ -295,13 +273,11 @@ class SpoolerTask(BaseTask):
             kwargs = pickle.loads(message['kwargs'])
 
         setup = pickle.loads(message.get('setup'))
-        wrapper = message.get('_wrapper')
 
         return cls(
             function=func_name,
             args=args,
             kwargs=kwargs,
-            wrapper=wrapper,
             **setup
         )
 
@@ -316,9 +292,8 @@ class SpoolerTask(BaseTask):
 class SignalTask(BaseTask):
     default_target = ''
 
-    def __init__(self, function, args=None, kwargs=None, wrapper=None, **setup):
-        super(SignalTask, self).__init__(function, args, kwargs, wrapper,
-                                         **setup)
+    def __init__(self, function, args=None, kwargs=None, **setup):
+        super(SignalTask, self).__init__(function, args, kwargs, **setup)
         self._signal_id = None
 
     def get_default_target(self):
