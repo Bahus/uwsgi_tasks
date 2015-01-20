@@ -10,7 +10,17 @@ if sys.argv[-1] == 'test':
 
 def get_long_description():
     with open('./README.md') as f:
-        return f.read()
+        readme = f.read()
+
+    try:
+        import pandoc
+    except ImportError:
+        return readme
+
+    pandoc.core.PANDOC_PATH = '/usr/local/bin/pandoc'
+    doc = pandoc.Document()
+    doc.markdown = readme
+    return doc.rst
 
 
 setup(
