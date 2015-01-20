@@ -115,12 +115,19 @@ class BaseTask(object):
                                              self.function_name)
 
     def __call__(self, *args, **kwargs):
+        if not uwsgi:
+            return
+
         # lazy initialization
         if args:
             self.args = args
+        else:
+            self.args = ()
 
         if kwargs:
             self.kwargs = kwargs
+        else:
+            self.kwargs = {}
 
         return self.execute_async()
 
@@ -140,6 +147,10 @@ class BaseTask(object):
     def function(self):
         if self._function is None:
             self._function = load_function(self.function_name)
+
+        if self._function:
+            self._function.task = self
+
         return self._function
 
     def execute_now(self):
@@ -249,13 +260,31 @@ class SpoolerTask(BaseTask):
         return uwsgi.spool(self.get_message_content())
 
     def execute_now(self):
-        if 'spool_return' in self.setup:
-            spool_return = self.setup['spool_return']
-        else:
-            spool_return = uwsgi.SPOOL_OK
-
         result = super(SpoolerTask, self).execute_now()
-        return result if spool_return is None else int(spool_return)
+        spool_return = self.setup.get('spooler_return')
+
+        if result == uwsgi.SPOOL_RETRY and not spool_return:
+            return self.retry()
+
+        if not spool_return:
+            return uwsgi.SPOOL_OK
+
+        return result
+
+    def retry(self):
+        retry_count = self.setup.get('retry_count')
+        retry_timeout = self.setup.get('retry_timeout', 0)
+
+        if isinstance(retry_timeout, int):
+            retry_timeout = timedelta(seconds=retry_timeout)
+
+        if retry_count and retry_count > 1:
+            # retry task
+            self.setup['retry_count'] = retry_count - 1
+            self.setup['at'] = retry_timeout
+            self.execute_async()
+
+        return uwsgi.SPOOL_OK
 
     @classmethod
     def extract_from_message(cls, message):
@@ -350,15 +379,20 @@ class SignalTask(BaseTask):
         return self.execute_now()
 
     def execute_async(self):
+        if not uwsgi:
+            return
+
         self.register_signal()
-        if uwsgi:
-            uwsgi.signal(self.signal_id)
-            self.free_signal()
+        uwsgi.signal(self.signal_id)
+        self.free_signal()
 
 
 class TimerTask(SignalTask):
 
     def execute_async(self):
+        if not uwsgi:
+            return
+
         self.register_signal(self.signal_handler)
 
         seconds = self.setup.get('seconds', 0)
@@ -373,6 +407,9 @@ class TimerTask(SignalTask):
 class CronTask(SignalTask):
 
     def execute_async(self):
+        if not uwsgi:
+            return
+
         self.register_signal(self.signal_handler)
 
         minute = self.setup.get('minute')

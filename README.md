@@ -17,7 +17,7 @@ Simple execute `pip install uwsgi_tasks`
 
 ### Mules, farms and spoolers
 
-Use case: you have Django project and want to send all emails asynchronously.
+**Use case**: you have Django project and want to send all emails asynchronously.
 
 Setup some mules with `--mule` or `--mules=<N>` parameters, or some spooler 
 processes with `--spooler==<path_to_spooler_folder>`.
@@ -54,7 +54,39 @@ The following tasks execution backends are supported:
 
 When `SPOOLER` backend is used, the following additional parameters are supported:
 * `priority` - string related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` parameter must be set for this feature to work.
-* `at` - UNIX timestamp or Python datetime or Python timedelta object.
+* `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object.
+* `spooler_return` - boolean value, `False` by default. If `True` is passed, you can return spooler codes from function, e.g. `SPOOL_OK`, `SPOOL_RETRY` and `SPOOL_IGNORE`.
+* `retry_count` - how many times spooler should repeat the task if it returns `SPOOL_RETRY` code, implies `spooler_return=True`.
+* `retry_timeout` - how many seconds between attempts spooler shoud wait to execute the task. Actual timeout depends on `spooler-frequency` parameter. Python **timedelta** object is also supported.
+
+**Use case**: run task asynchronously and repeat execution 3 times at maximum if it fails, with 5 seconds timeout between attempts.
+
+```python
+from functools import wraps
+from uwsgi_tasks import task, TaskExecutor
+
+
+def task_wrapper(func):
+    @wraps(func)  # required!
+    def _inner(*args, **kwargs):
+        print 'Task started with parameters:', args, kwargs
+        try:
+            func(*args, **kwargs)
+        except Exception as ex:  # example
+            print 'Exception is occurred', ex, 'repeat the task'
+            return uwsgi.SPOOL_RETRY
+
+        print 'Task ended', func
+        return uwsgi.SPOOL_OK
+
+    return _inner
+
+@task(executor=TaskExecutor.SPOOLER, retry_count=3, retry_timeout=5)
+@task_wrapper
+def spooler_task(text):
+    print 'Hello, spooler! text =', text
+    raise Exception('Sorry, task failed!')
+```
 
 #### There are some important notes:
 
@@ -102,7 +134,12 @@ def print_every_5_seconds(signal_number):
 def print_every_5_seconds(signal_number):
     """Prints string every 5 seconds 3 times"""
     print 'Task with iterations for signal', signal_number
-
+    
+@timer_lazy(seconds=5)
+def print_every_5_seconds_after_call(signal_number):
+    """Prints string every 5 seconds"""
+    print 'Lazy task for signal', signal_number
+    
 @cron(minute=-2)
 def print_every_2_minutes(signal_number):
     print 'Cron task:', signal_number
@@ -110,11 +147,6 @@ def print_every_2_minutes(signal_number):
 @cron_lazy(minute=-2, target='mule')
 def print_every_2_minutes_after_call(signal_number):
     print 'Cron task:', signal_number
-    
-@timer_lazy(seconds=5)
-def print_every_5_seconds_after_call(signal_number):
-    """Prints string every 5 seconds"""
-    print 'Lazy task for signal', signal_number
     
 ...
 
@@ -124,3 +156,5 @@ def my_view():
 ```
 
 Timer and cron decorators supports `target` parameter, supported values are described [here](http://uwsgi-docs.readthedocs.org/en/latest/PythonModule.html#uwsgi.register_signal).
+
+Keep in mind the maximum number of timer-like and cron-like tasks is 256 for each available worker.
