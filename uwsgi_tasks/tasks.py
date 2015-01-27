@@ -94,7 +94,7 @@ class TaskExecutor:
 class BaseTask(object):
     executor = None
 
-    def __init__(self, function, args=None, kwargs=None, **setup):
+    def __init__(self, function, **setup):
         self._function = None
 
         if isinstance(function, basestring):
@@ -106,8 +106,8 @@ class BaseTask(object):
             raise TypeError('Callable or dotted path must be provided '
                             'as first argument')
 
-        self.args = args or ()
-        self.kwargs = kwargs or {}
+        self.args = setup.pop('args', ())
+        self.kwargs = setup.pop('kwargs', {})
         self.setup = setup or {}
 
     def __str__(self):
@@ -115,19 +115,11 @@ class BaseTask(object):
                                              self.function_name)
 
     def __call__(self, *args, **kwargs):
-        if not uwsgi:
+        if not uwsgi and self.executor != TaskExecutor.RUNTIME:
             return
 
-        # lazy initialization
-        if args:
-            self.args = args
-        else:
-            self.args = ()
-
-        if kwargs:
-            self.kwargs = kwargs
-        else:
-            self.kwargs = {}
+        self.args = args
+        self.kwargs = kwargs
 
         return self.execute_async()
 
@@ -147,9 +139,6 @@ class BaseTask(object):
     def function(self):
         if self._function is None:
             self._function = load_function(self.function_name)
-
-        if self._function:
-            self._function.task = self
 
         return self._function
 
@@ -475,7 +464,8 @@ class Task(object):
         task = self.get_task(args, kwargs)
 
         logger.info('Executing %s', task)
-        return task.execute_async()
+        task.execute_async()
+        return task
 
     def get_task(self, args, kwargs):
         task_arguments = dict(

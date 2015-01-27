@@ -4,6 +4,7 @@ from distutils.core import setup
 
 
 if sys.argv[-1] == 'test':
+    # python-mock is required to run unit-tests
     import unittest
     unittest.main('uwsgi_tasks.tests', argv=sys.argv[:-1])
 
