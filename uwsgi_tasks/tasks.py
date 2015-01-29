@@ -310,8 +310,8 @@ class SpoolerTask(BaseTask):
 class SignalTask(BaseTask):
     default_target = ''
 
-    def __init__(self, function, args=None, kwargs=None, **setup):
-        super(SignalTask, self).__init__(function, args, kwargs, **setup)
+    def __init__(self, function, **setup):
+        super(SignalTask, self).__init__(function, **setup)
         self._signal_id = None
 
     def get_default_target(self):

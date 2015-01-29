@@ -5,7 +5,7 @@ from unittest import TestCase
 
 from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
-    RuntimeTask, manage_mule_request, manage_spool_request
+    RuntimeTask, manage_mule_request, manage_spool_request, TimerTask
 )
 from uwsgi_tasks import task, TaskExecutor
 
@@ -67,6 +67,10 @@ def spooler_task(a, b=None):
     storage(a, b)
 
 
+def timer_task(signum):
+    storage(signum)
+
+
 class TaskTest(TestCase):
 
     def setUp(self):
@@ -123,7 +127,29 @@ class TaskTest(TestCase):
             s_task = spooler_task(0, '1')
             message = s_task.get_message_content()
 
+            self.assertEqual(message['priority'], 10)
             uwsgi_mock.spool.assert_called_with(message)
             manage_spool_request(message)
 
         self.storage.assert_called_once_with(0, '1')
+
+    def test_rb_timer_task_execution(self):
+        with self.patcher as uwsgi_mock:
+            t_task = TimerTask(
+                timer_task,
+                signal=10,
+                seconds=5,
+                iterations=3,
+                target='workers'
+            )
+
+            t_task()
+
+            uwsgi_mock.register_signal.assert_called_once_with(
+                10, 'workers', t_task.signal_handler
+            )
+            uwsgi_mock.add_rb_timer.assert_called_once_with(10, 5, 3)
+
+            t_task.signal_handler(10)
+            self.storage.assert_called_once_with(10)
+

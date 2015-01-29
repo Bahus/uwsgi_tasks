@@ -15,9 +15,17 @@ def task(func=None, executor=TaskExecutor.AUTO, **setup):
         return lambda f: create_task(f)
 
 
-def timer(*args, **kwargs):
+def timer(func=None, seconds=0, iterations=None,
+          executor=TaskExecutor.AUTO, **setup):
     """Create timer on initialization"""
-    return timer_lazy(*args, run=True, **kwargs)
+    return timer_lazy(
+        func=func,
+        seconds=seconds,
+        iterations=iterations,
+        executor=executor,
+        run=True,
+        **setup
+    )
 
 
 def timer_lazy(func=None, seconds=0, iterations=None,
@@ -45,9 +53,20 @@ def timer_lazy(func=None, seconds=0, iterations=None,
     return inner(func)
 
 
-def cron(*args, **kwargs):
+def cron(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
+         executor=TaskExecutor.AUTO, **setup):
     """Creates cron-like task on initialization"""
-    return cron_lazy(*args, run=True, **kwargs)
+    return cron_lazy(
+        func=func,
+        minute=minute,
+        hour=hour,
+        day=day,
+        month=month,
+        dayweek=dayweek,
+        executor=executor,
+        run=True,
+        **setup
+    )
 
 
 def cron_lazy(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
