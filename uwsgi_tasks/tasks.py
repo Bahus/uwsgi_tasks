@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
 import collections
 import warnings
 import logging
@@ -25,8 +24,15 @@ try:
     if uwsgi.masterpid() == 0:
         warnings.warn('Uwsgi master process must be enabled', RuntimeWarning)
         uwsgi = None
+
+    SPOOL_OK = uwsgi.SPOOL_OK
+    SPOOL_IGNORE = uwsgi.SPOOL_IGNORE
+    SPOOL_RETRY = uwsgi.SPOOL_RETRY
 except ImportError:
     uwsgi = None
+    SPOOL_OK = -2
+    SPOOL_IGNORE = 0
+    SPOOL_RETRY = -1
 
 
 # maximum message size for mule and spooler (64Kb)
@@ -88,6 +94,14 @@ def set_uwsgi_callbacks():
 set_uwsgi_callbacks()
 
 
+class RetryTaskException(Exception):
+    """ Throw this exception to re-execute spooler task """
+
+    def __init__(self, count=None, timeout=None):
+        self.count = count
+        self.timeout = timeout
+
+
 class TaskExecutor:
     AUTO = 1
     SPOOLER = 2
@@ -133,7 +147,6 @@ class BaseTask(object):
             'function_name': self.function_name,
             'args': self.args,
             'kwargs': self.kwargs,
-            '_function': None,
             'setup': self.setup,
         }
 
@@ -148,7 +161,7 @@ class BaseTask(object):
         return self._function
 
     def execute_now(self):
-        logger.info('Executing %s', self)
+        logger.info('Executing %r', self)
         return self.function(*self.args, **self.kwargs)
 
     def execute_async(self):
@@ -255,31 +268,39 @@ class SpoolerTask(BaseTask):
         return uwsgi.spool(self.get_message_content())
 
     def execute_now(self):
-        result = super(SpoolerTask, self).execute_now()
+        try:
+            result = super(SpoolerTask, self).execute_now()
+        except RetryTaskException as ex:
+            # let's retry the task
+            return self.retry(count=ex.count, timeout=ex.timeout)
+
         spool_return = self.setup.get('spooler_return')
 
-        if result == uwsgi.SPOOL_RETRY and not spool_return:
+        if result == SPOOL_RETRY and not spool_return:
             return self.retry()
 
         if not spool_return:
-            return uwsgi.SPOOL_OK
+            return SPOOL_OK
 
         return result
 
-    def retry(self):
-        retry_count = self.setup.get('retry_count')
-        retry_timeout = self.setup.get('retry_timeout', 0)
+    def retry(self, count=None, timeout=None):
+        retry_count = self.setup.get('retry_count', count)
+        retry_timeout = self.setup.get('retry_timeout', timeout)
 
         if isinstance(retry_timeout, int):
             retry_timeout = timedelta(seconds=retry_timeout)
 
-        if retry_count and retry_count > 1:
-            # retry task
-            self.setup['retry_count'] = retry_count - 1
-            self.setup['at'] = retry_timeout
-            self.execute_async()
+        if retry_count is not None:
+            if retry_count > 1:
+                # retry task
+                self.setup['retry_count'] = retry_count - 1
+                self.setup['at'] = retry_timeout
+                self.execute_async()
+            else:
+                logger.info('Stop retrying for %r', self)
 
-        return uwsgi.SPOOL_OK
+        return SPOOL_OK
 
     @classmethod
     def extract_from_message(cls, message):
@@ -465,7 +486,7 @@ class Task(object):
     def __call__(self, *args, **kwargs):
 
         if not uwsgi:
-            logger.warning('UWSGI environment is not available, so task %s '
+            logger.warning('UWSGI environment is not available, so task %r '
                            'will be executed at runtime', self)
             self.executor = TaskExecutor.RUNTIME
 

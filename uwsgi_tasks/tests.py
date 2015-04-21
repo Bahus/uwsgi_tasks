@@ -7,7 +7,7 @@ from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
     RuntimeTask, manage_mule_request, manage_spool_request, TimerTask
 )
-from uwsgi_tasks import task, TaskExecutor
+from uwsgi_tasks import task, TaskExecutor, RetryTaskException, SPOOL_OK
 
 
 def local_function(value):
@@ -67,6 +67,12 @@ def spooler_task(a, b=None):
     storage(a, b)
 
 
+@task(executor=TaskExecutor.SPOOLER, retry_count=2)
+def spooler_retry_task(g, h):
+    storage(g, h)
+    raise RetryTaskException()
+
+
 def timer_task(signum):
     storage(signum)
 
@@ -94,10 +100,9 @@ class TaskTest(TestCase):
         with self.assertRaises(TypeError):
             runtime_task()
 
-    def test_task_is_not_executed_if_uwsgi_not_available(self):
-        result = mule_task()
-        self.assertFalse(result)
-        self.assertFalse(self.storage.called)
+    def test_task_is_executed_at_runtime_if_uwsgi_not_available(self):
+        mule_task(4, 5, 6, 7)
+        self.storage.assert_called_once_with(4, 5, 6, 7)
 
     def test_mule_task_execution_became_runtime(self):
         # 'mule' not in uwsgi.opt, so it goes to runtime
@@ -122,7 +127,7 @@ class TaskTest(TestCase):
     def test_spooler_task_execution(self):
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
-            uwsgi_mock.SPOOL_OK = 1
+            uwsgi_mock.SPOOL_OK = SPOOL_OK
 
             s_task = spooler_task(0, '1')
             message = s_task.get_message_content()
@@ -153,3 +158,14 @@ class TaskTest(TestCase):
             t_task.signal_handler(10)
             self.storage.assert_called_once_with(10)
 
+    def test_spooler_retry_on_exception(self):
+        with self.patcher as uwsgi_mock:
+            uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
+            uwsgi_mock.SPOOL_OK = SPOOL_OK
+
+            s_task = spooler_retry_task(666, 777)
+            message = s_task.get_message_content()
+            uwsgi_mock.spool.assert_called_with(message)
+            manage_spool_request(message)
+
+        self.storage.assert_called_once_with(666, 777)
