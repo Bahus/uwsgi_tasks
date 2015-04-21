@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 import collections
 import warnings
 import logging
@@ -49,6 +50,8 @@ def load_function(func_name):
 
 
 def manage_spool_request(message):
+    logger.debug('Processing request for spooler')
+
     try:
         task = SpoolerTask.extract_from_message(message)
         if task:
@@ -60,6 +63,7 @@ def manage_spool_request(message):
 
 
 def manage_mule_request(message):
+    logger.debug('Processing request for mule')
     task = MuleTask.extract_from_message(message)
     if task:
         return task.execute_now()
@@ -110,9 +114,10 @@ class BaseTask(object):
         self.kwargs = setup.pop('kwargs', {})
         self.setup = setup or {}
 
-    def __str__(self):
-        return u'<Task: {} for "{}">'.format(self.__class__.__name__,
-                                             self.function_name)
+    def __repr__(self):
+        return u'<Task: {} for "{}" with args={!r}, kwargs={!r}>'.format(
+            self.__class__.__name__, self.function_name, self.args, self.kwargs
+        )
 
     def __call__(self, *args, **kwargs):
         if not uwsgi and self.executor != TaskExecutor.RUNTIME:
@@ -143,6 +148,7 @@ class BaseTask(object):
         return self._function
 
     def execute_now(self):
+        logger.info('Executing %s', self)
         return self.function(*self.args, **self.kwargs)
 
     def execute_async(self):
@@ -421,7 +427,7 @@ class OneTimeTask(TimerTask):
     """It's like TimerTask but executes only ones"""
     executor = TaskExecutor.AUTO
 
-    def __init__(self, function, args=None, kwargs=None, **setup):
+    def __init__(self, function, **setup):
         if 'signal' not in setup:
             warnings.warn(
                 'You should provide "signal" parameter, otherwise '
@@ -434,7 +440,7 @@ class OneTimeTask(TimerTask):
             'seconds': 0,
             'iterations': 1,
         })
-        super(OneTimeTask, self).__init__(function, args, kwargs, **setup)
+        super(OneTimeTask, self).__init__(function, **setup)
 
 
 tasks_registry = collections.OrderedDict((
@@ -450,26 +456,29 @@ class Task(object):
     def __init__(self, func, executor=TaskExecutor.AUTO, **setup):
         assert callable(func)
 
-        self.func = func
-        self.func_name = get_function_path(self.func)
+        self.function = func
+        self.function_name = get_function_path(self.function)
         self.executor = executor
         self.setup = setup
         self._add_to_global_storage()
 
     def __call__(self, *args, **kwargs):
+
         if not uwsgi:
-            return False
+            logger.warning('UWSGI environment is not available, so task %s '
+                           'will be executed at runtime', self)
+            self.executor = TaskExecutor.RUNTIME
 
         # create task and execute it at runtime or send to mule\spooler
         task = self.get_task(args, kwargs)
 
-        logger.info('Executing %s', task)
+        logger.info('Executing asynchronously %s', task)
         task.execute_async()
         return task
 
     def get_task(self, args, kwargs):
         task_arguments = dict(
-            function=self.func,
+            function=self.function,
             args=args,
             kwargs=kwargs,
         )
@@ -492,8 +501,11 @@ class Task(object):
 
         raise RuntimeError(
             'Could not create a task for "{}" and executor "{}"'.format(
-                self.func_name, self.executor)
+                self.function_name, self.executor)
         )
 
     def _add_to_global_storage(self):
-        setattr(saved_tasks, self.func_name, self.func)
+        setattr(saved_tasks, self.function_name, self.function)
+
+    def __repr__(self):
+        return '<TaskFactory: "{}">'.format(self.function_name)
