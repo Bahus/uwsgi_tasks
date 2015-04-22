@@ -152,6 +152,7 @@ class BaseTask(object):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        self._function = None
 
     @property
     def function(self):
@@ -286,7 +287,7 @@ class SpoolerTask(BaseTask):
 
     def retry(self, count=None, timeout=None):
         retry_count = self.setup.get('retry_count', count)
-        retry_timeout = self.setup.get('retry_timeout', timeout)
+        retry_timeout = self.setup.get('retry_timeout', timeout) or 0
 
         if isinstance(retry_timeout, int):
             retry_timeout = timedelta(seconds=retry_timeout)

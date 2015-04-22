@@ -70,7 +70,7 @@ def spooler_task(a, b=None):
 @task(executor=TaskExecutor.SPOOLER, retry_count=2)
 def spooler_retry_task(g, h):
     storage(g, h)
-    raise RetryTaskException()
+    raise RetryTaskException(timeout=10)
 
 
 def timer_task(signum):
@@ -165,7 +165,15 @@ class TaskTest(TestCase):
 
             s_task = spooler_retry_task(666, 777)
             message = s_task.get_message_content()
+            self.assertFalse(message.get('at'))
+
             uwsgi_mock.spool.assert_called_with(message)
             manage_spool_request(message)
+            self.storage.assert_called_once_with(666, 777)
 
-        self.storage.assert_called_once_with(666, 777)
+            new_message = uwsgi_mock.spool.call_args_list[-1][0][0]
+            self.assertTrue(new_message.get('at'))
+
+            manage_spool_request(message)
+
+        self.assertEqual(2, self.storage.call_count)

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import sys
 from distutils.core import setup
 
@@ -18,7 +19,16 @@ def get_long_description():
     except ImportError:
         return readme
 
-    pandoc.core.PANDOC_PATH = '/usr/local/bin/pandoc'
+    path = None
+    for p in ('/usr/local/bin/pandoc', '/usr/bin/pandoc'):
+        if os.path.exists(p):
+            path = p
+
+    if path is None:
+        print 'pandoc not found'
+        return readme
+
+    pandoc.core.PANDOC_PATH = path
     doc = pandoc.Document()
     doc.markdown = readme
     return doc.rst
@@ -27,7 +37,7 @@ def get_long_description():
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.2',
+    version='0.3',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
