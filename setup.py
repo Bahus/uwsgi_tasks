@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, unicode_literals
+import io
 import os
 import sys
 import subprocess
@@ -13,7 +14,7 @@ if sys.argv[-1] == 'test':
 
 
 def get_long_description():
-    with open('./README.md') as f:
+    with io.open('./README.md', encoding='utf-8') as f:
         readme = f.read()
 
     path = None
