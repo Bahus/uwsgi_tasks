@@ -30,13 +30,13 @@ def get_long_description():
 
     cmd = [path, '--from=markdown', '--to=rst']
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    return p.communicate(readme.encode())[0]
+    return p.communicate(readme.encode())[0].decode()
 
 
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.4.1',
+    version='0.4.2',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
