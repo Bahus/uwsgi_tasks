@@ -57,4 +57,5 @@ setup(
     ],
     long_description=get_long_description(),
     requires=['uwsgi', 'six'],
+    install_requires=['six'],
 )
