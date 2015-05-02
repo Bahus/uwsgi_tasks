@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+import six
 import collections
 import warnings
 import logging
@@ -12,9 +14,8 @@ from uwsgi_tasks.utils import (
     get_function_path,
 )
 
-
 try:
-    import cPickle as pickle
+    from six.moves import cPickle as pickle
 except ImportError:
     import pickle
 
@@ -57,7 +58,6 @@ def load_function(func_name):
 
 def manage_spool_request(message):
     logger.debug('Processing request for spooler')
-
     try:
         task = SpoolerTask.extract_from_message(message)
         if task:
@@ -65,7 +65,7 @@ def manage_spool_request(message):
     except:
         traceback.print_exc()
         logger.exception('Spooler message ignored: "%s"', message)
-        return uwsgi.SPOOL_OK
+        return SPOOL_OK
 
 
 def manage_mule_request(message):
@@ -115,7 +115,7 @@ class BaseTask(object):
     def __init__(self, function, **setup):
         self._function = None
 
-        if isinstance(function, basestring):
+        if isinstance(function, six.string_types):
             self.function_name = function
         elif callable(function):
             self._function = function
@@ -244,7 +244,7 @@ class SpoolerTask(BaseTask):
             if isinstance(at, datetime):
                 at = calendar.timegm(at.timetuple())
 
-            base_message_dict['at'] = at
+            base_message_dict['at'] = str(at)
 
         logger.debug('Spooler base parameters: "%r"', base_message_dict)
 
@@ -262,8 +262,37 @@ class SpoolerTask(BaseTask):
                 'kwargs': self.kwargs,
             })
 
-        # TODO: encode utf-8 for python 3 compatibility
-        return message_dict
+        return self._encode_message(message_dict)
+
+    @staticmethod
+    def _encode_message(message_dict):
+        """ Encode message key, since spooler accept only bytes literals """
+
+        def encoder(s):
+            try:
+                if isinstance(s, six.text_type):
+                    return s.encode()
+            except UnicodeEncodeError:
+                pass
+            return s
+
+        return {encoder(k): encoder(v) for k, v in six.iteritems(message_dict)}
+
+    @staticmethod
+    def _decode_message(message_dict):
+
+        def decoder(s, decode=True):
+            try:
+                if decode and isinstance(s, six.binary_type):
+                    return s.decode()
+            except UnicodeDecodeError:
+                pass
+            return s
+
+        return {
+            decoder(k): decoder(v, k in {b'function_name'})
+            for k, v in six.iteritems(message_dict)
+        }
 
     def execute_async(self):
         return uwsgi.spool(self.get_message_content())
@@ -305,6 +334,7 @@ class SpoolerTask(BaseTask):
 
     @classmethod
     def extract_from_message(cls, message):
+        message = cls._decode_message(message)
         func_name = message.get('function_name')
 
         if not func_name:

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+from __future__ import print_function, unicode_literals
 import os
 import sys
+import subprocess
 from distutils.core import setup
 
 
@@ -14,30 +16,26 @@ def get_long_description():
     with open('./README.md') as f:
         readme = f.read()
 
-    try:
-        import pandoc
-    except ImportError:
-        return readme
-
     path = None
-    for p in ('/usr/local/bin/pandoc', '/usr/bin/pandoc'):
+    pandoc_paths = ('/usr/local/bin/pandoc', '/usr/bin/pandoc')
+    for p in pandoc_paths:
         if os.path.exists(p):
             path = p
+            break
 
     if path is None:
-        print 'pandoc not found'
+        print('Pandoc not found, tried: {}'.format(pandoc_paths))
         return readme
 
-    pandoc.core.PANDOC_PATH = path
-    doc = pandoc.Document()
-    doc.markdown = readme
-    return doc.rst
+    cmd = [path, '--from=markdown', '--to=rst']
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    return p.communicate(readme.encode())[0]
 
 
 setup(
     name='uwsgi-tasks',
-    packages=['uwsgi_tasks'],
-    version='0.3',
+    packages=['uwsgi_tasks', 'six'],
+    version='0.4',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
@@ -46,11 +44,12 @@ setup(
     platforms='Platform Independent',
     license='MIT',
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: Web Environment',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.4',
         'Topic :: Software Development :: Libraries :: Python Modules',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License'

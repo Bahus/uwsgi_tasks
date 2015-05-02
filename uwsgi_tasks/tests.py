@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import mock
+import six
 from datetime import timedelta
 from unittest import TestCase
 
@@ -15,6 +16,7 @@ def local_function(value):
 
 
 class UtilsTest(TestCase):
+    builtin_module = '__builtin__' if six.PY2 else 'builtins'
 
     def test_import_by_path(self):
         with self.assertRaises(ImportError):
@@ -31,34 +33,31 @@ class UtilsTest(TestCase):
         self.assertTrue(
             local_function is import_by_path('uwsgi_tasks.tests.local_function')
         )
-
-        self.assertTrue(len is import_by_path('__builtin__.len'))
+        self.assertTrue(len is import_by_path('{}.len'.format(
+            self.builtin_module)))
 
     def test_get_function_path(self):
-        self.assertEquals(
+        self.assertEqual(
             get_function_path(local_function),
             'uwsgi_tasks.tests.local_function'
         )
 
         self.assertEqual(
             get_function_path(len),
-            '__builtin__.len'
+            '{}.len'.format(self.builtin_module)
         )
 
         def nested():
             pass
 
-        self.assertEquals(
-            get_function_path(nested),
-            'uwsgi_tasks.tests.nested'
-        )
+        self.assertEqual(get_function_path(nested), 'uwsgi_tasks.tests.nested')
 
 
 storage = mock.MagicMock()
 
 
 @task(executor=TaskExecutor.MULE)
-def mule_task(a, b, c=3, d=4):
+def mule_task(a, b, c='3', d='4'):
     storage(a, b, c, d)
 
 
@@ -101,20 +100,20 @@ class TaskTest(TestCase):
             runtime_task()
 
     def test_task_is_executed_at_runtime_if_uwsgi_not_available(self):
-        mule_task(4, 5, 6, 7)
-        self.storage.assert_called_once_with(4, 5, 6, 7)
+        mule_task(4, 5, '6', '7')
+        self.storage.assert_called_once_with(4, 5, '6', '7')
 
     def test_mule_task_execution_became_runtime(self):
         # 'mule' not in uwsgi.opt, so it goes to runtime
         with self.patcher:
-            mule_task(4, 7, 8)
+            mule_task(4, 7, '8')
 
-        self.storage.assert_called_with(4, 7, 8, 4)
+        self.storage.assert_called_with(4, 7, '8', '4')
 
     def test_mule_task_execution(self):
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'mule': 1}
-            m_task = mule_task(6, 6, u'a', u'кириллический')
+            m_task = mule_task(6, 6,  u'a', u'кириллический')
 
             message = m_task.get_message_content()
             uwsgi_mock.mule_msg.assert_called_with(
@@ -132,7 +131,7 @@ class TaskTest(TestCase):
             s_task = spooler_task(0, '1')
             message = s_task.get_message_content()
 
-            self.assertEqual(message['priority'], 10)
+            self.assertEqual(message[b'priority'], 10)
             uwsgi_mock.spool.assert_called_with(message)
             manage_spool_request(message)
 
@@ -165,14 +164,17 @@ class TaskTest(TestCase):
 
             s_task = spooler_retry_task(666, 777)
             message = s_task.get_message_content()
-            self.assertFalse(message.get('at'))
+
+            self.assertFalse(message.get(b'at'))
 
             uwsgi_mock.spool.assert_called_with(message)
+
             manage_spool_request(message)
             self.storage.assert_called_once_with(666, 777)
+            self.assertEqual(2, uwsgi_mock.spool.call_count)
 
             new_message = uwsgi_mock.spool.call_args_list[-1][0][0]
-            self.assertTrue(new_message.get('at'))
+            self.assertTrue(new_message.get(b'at'))
 
             manage_spool_request(message)
 

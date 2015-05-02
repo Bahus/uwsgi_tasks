@@ -32,14 +32,15 @@ from uwsgi_tasks import task, TaskExecutor, set_uwsgi_callbacks
 # set default callbacks for mules and spoolers
 set_uwsgi_callbacks()
 
-@task(executor=TaskExecutor.MULE)
+@task(executor=TaskExecutor.SPOOLER)
 def send_email_async(subject, body, email_to):
+    # Execute task asynchronously on first available spooler
     return send_mail(subject, body, 'noreply@domain.com', [email_to])
  
 ...
 
 def my_view():
-    # Execute tasks asynchronously on first available mule
+    # Execute tasks asynchronously on first available spooler
     send_email_async('Welcome!', 'Thank you!', 'user@domain.com')
 ```
 
@@ -50,10 +51,10 @@ The following tasks execution backends are supported:
 * `AUTO` - default mode, mule will be used if it is available and _pickled_ task's arguments less than 64 KB in size, otherwise spooler will be used. If spooler is not available, than task is executed at runtime.
 * `MULE` - execute decorated task on first available mule
 * `SPOOLER` - execute decorated task on spooler
-* `RUNTIME` - execute task at runtime
+* `RUNTIME` - execute task at runtime, this backend is also used in case `uwsgi` module can't be imported, e.g. tests.
 
 When `SPOOLER` backend is used, the following additional parameters are supported:
-* `priority` - string related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` parameter must be set for this feature to work.
+* `priority` - **string** related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` parameter must be set for this feature to work (in linux only?).
 * `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object.
 * `spooler_return` - boolean value, `False` by default. If `True` is passed, you can return spooler codes from function, e.g. `SPOOL_OK`, `SPOOL_RETRY` and `SPOOL_IGNORE`.
 * `retry_count` - how many times spooler should repeat the task if it returns `SPOOL_RETRY` code, implies `spooler_return=True`.
@@ -63,8 +64,7 @@ When `SPOOLER` backend is used, the following additional parameters are supporte
 
 ```python
 from functools import wraps
-from uwsgi_tasks import task, TaskExecutor
-
+from uwsgi_tasks import task, TaskExecutor, SPOOL_OK, SPOOL_RETRY
 
 def task_wrapper(func):
     @wraps(func)  # required!
@@ -74,10 +74,10 @@ def task_wrapper(func):
             func(*args, **kwargs)
         except Exception as ex:  # example
             print 'Exception is occurred', ex, 'repeat the task'
-            return uwsgi.SPOOL_RETRY
+            return SPOOL_RETRY
 
         print 'Task ended', func
-        return uwsgi.SPOOL_OK
+        return SPOOL_OK
 
     return _inner
 
@@ -87,6 +87,27 @@ def spooler_task(text):
     print 'Hello, spooler! text =', text
     raise Exception('Sorry, task failed!')
 ```
+
+Raising `RetryTaskException(count=<retry_count>, timeout=<retry_timeout>)` approach can be also used to retry task execution:
+
+```python
+import logging
+from uwsgi_tasks import RetryTaskException, task, TaskExecutor
+
+@task(executor=TaskExecutor.SPOOLER, retry_count=2)
+def process_purchase(order_id):
+    
+    try:
+        # make something with order id
+        ...
+    except Exception as ex:
+        logging.exception('Something bad happened')
+        # retry task in 10 seconds for the last time
+        raise RetryTaskException(timeout=10)
+```
+Be careful when providing `count` parameter to the exception's constructor - it may lead to infinite tasks execution, since the parameter replaces the value of `retry_count`.
+
+Task execution process can be also controlled via spooler options, see details [here](http://uwsgi-docs.readthedocs.org/en/latest/Spooler.html?highlight=spool_ok#options).
 
 #### There are some important notes:
 
