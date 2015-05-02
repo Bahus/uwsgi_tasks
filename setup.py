@@ -34,7 +34,7 @@ def get_long_description():
 
 setup(
     name='uwsgi-tasks',
-    packages=['uwsgi_tasks', 'six'],
+    packages=['uwsgi_tasks'],
     version='0.4',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
@@ -55,5 +55,5 @@ setup(
         'License :: OSI Approved :: MIT License'
     ],
     long_description=get_long_description(),
-    requires=['uwsgi'],
+    requires=['uwsgi', 'six'],
 )
