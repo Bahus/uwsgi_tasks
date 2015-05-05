@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function, unicode_literals
+from __future__ import print_function
 import io
 import os
 import sys
 import subprocess
-from distutils.core import setup
+from setuptools import setup
 
 
 if sys.argv[-1] == 'test':
@@ -36,7 +36,7 @@ def get_long_description():
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.4.3',
+    version='0.4.4',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
