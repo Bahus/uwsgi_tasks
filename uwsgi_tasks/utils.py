@@ -71,3 +71,16 @@ def django_setup(settings_module=None):
             settings._setup()
 
     setup()
+
+
+class ProxyDict(dict):
+
+    def __init__(self, dict_instance, key):
+        super(ProxyDict, self).__init__()
+
+        self.key = key
+
+        if self.key in dict_instance:
+            self.update(dict_instance[self.key])
+
+        dict_instance[self.key] = self

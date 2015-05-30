@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 import six
+
+import inspect
 import collections
 import warnings
 import logging
@@ -12,6 +14,7 @@ from datetime import datetime, timedelta
 from uwsgi_tasks.utils import (
     import_by_path,
     get_function_path,
+    ProxyDict,
 )
 
 try:
@@ -94,6 +97,21 @@ def set_uwsgi_callbacks():
 set_uwsgi_callbacks()
 
 
+def get_current_task():
+    """ Introspection API: allows to get current task instance in
+    called function.
+    """
+    stack = inspect.stack()
+    try:
+        caller_name = stack[1][3]
+        caller_task = stack[1][0].f_globals[caller_name]
+    except (IndexError, KeyError):
+        logger.exception('get_current_task failed')
+        return None
+
+    return getattr(caller_task.function, BaseTask.attr_name, None)
+
+
 class RetryTaskException(Exception):
     """ Throw this exception to re-execute spooler task """
 
@@ -110,6 +128,7 @@ class TaskExecutor:
 
 
 class BaseTask(object):
+    attr_name = 'uwsgi_task'
     executor = None
 
     def __init__(self, function, **setup):
@@ -127,6 +146,7 @@ class BaseTask(object):
         self.args = setup.pop('args', ())
         self.kwargs = setup.pop('kwargs', {})
         self.setup = setup or {}
+        self._buffer = None
 
     def __repr__(self):
         return u'<Task: {} for "{}" with args={!r}, kwargs={!r}>'.format(
@@ -153,6 +173,14 @@ class BaseTask(object):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._function = None
+        self._buffer = None
+
+    @property
+    def buffer(self):
+        if not self._buffer:
+            self._buffer = ProxyDict(self.setup, 'buffer')
+
+        return self._buffer
 
     @property
     def function(self):
@@ -163,6 +191,7 @@ class BaseTask(object):
 
     def execute_now(self):
         logger.info('Executing %r', self)
+        setattr(self.function, self.attr_name, self)
         return self.function(*self.args, **self.kwargs)
 
     def execute_async(self):
@@ -225,6 +254,11 @@ class SpoolerTask(BaseTask):
     spooler_default_arguments = (
         'message_dict', 'spooler', 'priority', 'at'
     )
+
+    def __init__(self, function, **setup):
+        super(SpoolerTask, self).__init__(function, **setup)
+        self.retry_count = self.setup.pop('retry_count', None)
+        self.retry_timeout = self.setup.pop('retry_timeout', None)
 
     def get_message_content(self):
         base_message_dict = self.__getstate__()
@@ -314,18 +348,55 @@ class SpoolerTask(BaseTask):
 
         return result
 
-    def retry(self, count=None, timeout=None):
-        retry_count = self.setup.get('retry_count', count)
-        retry_timeout = self.setup.get('retry_timeout', timeout) or 0
+    @property
+    def retry_count(self):
+        return self.setup.get('retry_count')
 
-        if isinstance(retry_timeout, int):
-            retry_timeout = timedelta(seconds=retry_timeout)
+    @retry_count.setter
+    def retry_count(self, value):
+        if value is None:
+            value = 0
+
+        if not isinstance(value, int):
+            raise TypeError('retry_count must be integer '
+                            'got {}'.format(type(value)))
+        self.setup['retry_count'] = value
+
+    @property
+    def retry_timeout(self):
+        return self.setup.get('retry_timeout')
+
+    @retry_timeout.setter
+    def retry_timeout(self, value):
+        if not value:
+            return
+
+        if isinstance(value, timedelta):
+            value = value.seconds
+        elif not isinstance(value, int):
+            raise TypeError('retry_timeout must be integer or timedelta'
+                            ' got {}'.format(type(value)))
+
+        self.setup['retry_timeout'] = value
+
+    @property
+    def at(self):
+        return self.setup.get('at')
+
+    @at.setter
+    def at(self, value):
+        self.setup['at'] = value
+
+    def retry(self, count=None, timeout=None):
+        retry_count = count or self.retry_count
+        retry_timeout = timeout or self.retry_timeout or 0
 
         if retry_count is not None:
             if retry_count > 1:
                 # retry task
-                self.setup['retry_count'] = retry_count - 1
-                self.setup['at'] = retry_timeout
+                self.retry_timeout = retry_timeout
+                self.retry_count = retry_count - 1
+                self.at = timedelta(seconds=self.retry_timeout)
                 self.execute_async()
             else:
                 logger.info('Stop retrying for %r', self)

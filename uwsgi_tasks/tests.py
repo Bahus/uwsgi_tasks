@@ -6,7 +6,8 @@ from unittest import TestCase
 
 from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
-    RuntimeTask, manage_mule_request, manage_spool_request, TimerTask
+    RuntimeTask, manage_mule_request, manage_spool_request, TimerTask,
+    get_current_task, SpoolerTask
 )
 from uwsgi_tasks import task, TaskExecutor, RetryTaskException, SPOOL_OK
 
@@ -61,7 +62,7 @@ def mule_task(a, b, c='3', d='4'):
     storage(a, b, c, d)
 
 
-@task(executor=TaskExecutor.SPOOLER, priority=10, at=timedelta(seconds=10))
+@task(executor=TaskExecutor.SPOOLER, priority='10', at=timedelta(seconds=10))
 def spooler_task(a, b=None):
     storage(a, b)
 
@@ -70,6 +71,29 @@ def spooler_task(a, b=None):
 def spooler_retry_task(g, h):
     storage(g, h)
     raise RetryTaskException(timeout=10)
+
+
+@task(executor=TaskExecutor.SPOOLER, retry_count=2,
+      retry_timeout=timedelta(seconds=20))
+def spooler_and_task_introspection(a, b):
+    current_task = get_current_task()
+    assert isinstance(current_task, SpoolerTask)
+    assert current_task.executor == TaskExecutor.SPOOLER
+
+    if len(current_task.buffer):
+        assert current_task.retry_count == 1
+        assert current_task.retry_timeout == 50
+        assert current_task.at == timedelta(seconds=50)
+        assert len(current_task.buffer) == 1
+        assert current_task.buffer[b'message'] == u'Hello, World!'
+    else:
+        assert current_task.executor == TaskExecutor.SPOOLER
+        assert current_task.retry_count == 2
+        assert current_task.retry_timeout == 20
+
+    storage(a, b)
+    current_task.buffer[b'message'] = u'Hello, World!'
+    raise RetryTaskException(timeout=50)
 
 
 def timer_task(signum):
@@ -131,7 +155,7 @@ class TaskTest(TestCase):
             s_task = spooler_task(0, '1')
             message = s_task.get_message_content()
 
-            self.assertEqual(message[b'priority'], 10)
+            self.assertEqual(message[b'priority'], b'10')
             uwsgi_mock.spool.assert_called_with(message)
             manage_spool_request(message)
 
@@ -178,4 +202,18 @@ class TaskTest(TestCase):
 
             manage_spool_request(message)
 
+        self.assertEqual(2, self.storage.call_count)
+
+    def test_spooler_task_introspection(self):
+        with self.patcher as uwsgi_mock:
+            uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
+
+            s_task = spooler_and_task_introspection('a', 1)
+            message = s_task.get_message_content()
+            manage_spool_request(message)
+
+            new_message = uwsgi_mock.spool.call_args_list[-1][0][0]
+            manage_spool_request(new_message)
+
+        self.storage.assert_called_with('a', 1)
         self.assertEqual(2, self.storage.call_count)

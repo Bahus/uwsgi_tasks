@@ -45,16 +45,24 @@ def my_view():
 ```
 
 Execution of `send_email_async` will not block execution of `my_view`, since 
-function will be called by first available mule.
+function will be called by first available spooler. I personally recommend to use spoolers rather than mules for several reasons:
+
+1. Task will be executed\retried even if uwsgi is crashed or restarted, since task information stored in files.
+2. Task parameters size is not limited to 64 KBytes.
+3. You may switch to external\network spoolers if required.
+4. You are able to tune task execution flow with introspection facilities.
+
 
 The following tasks execution backends are supported:
+
 * `AUTO` - default mode, mule will be used if it is available and _pickled_ task's arguments less than 64 KB in size, otherwise spooler will be used. If spooler is not available, than task is executed at runtime.
 * `MULE` - execute decorated task on first available mule
 * `SPOOLER` - execute decorated task on spooler
 * `RUNTIME` - execute task at runtime, this backend is also used in case `uwsgi` module can't be imported, e.g. tests.
 
 When `SPOOLER` backend is used, the following additional parameters are supported:
-* `priority` - **string** related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` parameter must be set for this feature to work (in linux only?).
+
+* `priority` - **string** related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` uwsgi parameter must be set for this feature to work (in linux only?).
 * `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object.
 * `spooler_return` - boolean value, `False` by default. If `True` is passed, you can return spooler codes from function, e.g. `SPOOL_OK`, `SPOOL_RETRY` and `SPOOL_IGNORE`.
 * `retry_count` - how many times spooler should repeat the task if it returns `SPOOL_RETRY` code, implies `spooler_return=True`.
@@ -105,11 +113,12 @@ def process_purchase(order_id):
         # retry task in 10 seconds for the last time
         raise RetryTaskException(timeout=10)
 ```
-Be careful when providing `count` parameter to the exception's constructor - it may lead to infinite tasks execution, since the parameter replaces the value of `retry_count`.
+
+Be careful when providing `count` parameter to the exception constructor - it may lead to infinite tasks execution, since the parameter replaces the value of `retry_count`.
 
 Task execution process can be also controlled via spooler options, see details [here](http://uwsgi-docs.readthedocs.org/en/latest/Spooler.html?highlight=spool_ok#options).
 
-#### There are some important notes:
+### Project setup:
 
 Tasks should be imported on project initialization, thus if you use Django, you may place your tasks in `app/tasks.py` file and import them in `app/__init__.py`:
 
@@ -179,3 +188,49 @@ def my_view():
 Timer and cron decorators supports `target` parameter, supported values are described [here](http://uwsgi-docs.readthedocs.org/en/latest/PythonModule.html#uwsgi.register_signal).
 
 Keep in mind the maximum number of timer-like and cron-like tasks is 256 for each available worker.
+
+### Task introspection API
+
+Using task introspection API you can get current task object inside current task function and will be able to change some task parameters. You may also use special `buffer` dict-like object to pass data between task execution attempts. Using `get_current_task` you are able to get internal representation of task object and manipulate the attributes of the task, e.g. SpoolerTask object has the following changeable properties: `at`, `retry_count`, `retry_timeout`. 
+
+Here is a complex example:
+
+```python
+from uwsgi_tasks import get_current_task
+
+@task(executor=TaskExecutor.SPOOLER, at=datetime.timedelta(seconds=10))
+def remove_files_sequentially(previous_selected_file=None):
+    # get current SpoolerTask object
+    current_task = get_current_task()
+
+    selected_file = select_file_for_removal(previous_selected_file)
+
+    # we should stop the task here
+    if selected_file is None:
+        logger.info('All files were removed')
+        for filename, removed_at in current_task.buffer['results'].items():
+            logger.info('File "%s" was removed at "%s"', filename, removed_at)
+        for filename, error_message in current_task.buffer['errors'].items():
+            logger.info('File "%s", error: "%s"', filename, error_message)
+        return
+
+    try:
+        logger.info('Removing the file "%s"', selected_file)
+        # ... remove the file ...
+        del_file(selected_file)
+    except IOError as ex:
+        logger.exception('Cannot delete file "%s"', selected_file)
+
+        # let's try to remove this one more time later
+        io_errors = current_task.buffer.setdefault('errors', {}).get(selected_file)
+        if not io_errors:
+            current_task.buffer['errors'][selected_file] = str(ex)
+            current_task.at = datetime.timedelta(seconds=20)
+            return current_task(previous_selected_file)
+
+    # save datetime of removal
+    current_task.buffer.setdefault('results', {})[selected_file] = datetime.datetime.now()
+
+    # run in async mode
+    return current_task(selected_file)
+```
