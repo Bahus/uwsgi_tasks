@@ -66,7 +66,7 @@ When `SPOOLER` backend is used, the following additional parameters are supporte
 * `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object.
 * `spooler_return` - boolean value, `False` by default. If `True` is passed, you can return spooler codes from function, e.g. `SPOOL_OK`, `SPOOL_RETRY` and `SPOOL_IGNORE`.
 * `retry_count` - how many times spooler should repeat the task if it returns `SPOOL_RETRY` code, implies `spooler_return=True`.
-* `retry_timeout` - how many seconds between attempts spooler shoud wait to execute the task. Actual timeout depends on `spooler-frequency` parameter. Python **timedelta** object is also supported.
+* `retry_timeout` - how many seconds between attempts spooler should wait to execute the task. Actual timeout depends on `spooler-frequency` parameter. Python **timedelta** object is also supported.
 
 **Use case**: run task asynchronously and repeat execution 3 times at maximum if it fails, with 5 seconds timeout between attempts.
 
