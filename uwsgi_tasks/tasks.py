@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
-import six
-
 import inspect
 import collections
-import warnings
 import logging
 import threading
 import traceback
 import calendar
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
+import os
+import six
+import warnings
 from uwsgi_tasks.utils import (
     import_by_path,
     get_function_path,
     ProxyDict,
 )
 
+
 try:
+    # noinspection PyPep8Naming
     from six.moves import cPickle as pickle
 except ImportError:
     import pickle
@@ -146,12 +149,30 @@ class BaseTask(object):
         self.args = setup.pop('args', ())
         self.kwargs = setup.pop('kwargs', {})
         self.setup = setup or {}
+        self.setup.setdefault('working_dir', os.getcwd())
         self._buffer = None
 
     def __repr__(self):
         return u'<Task: {} for "{}" with args={!r}, kwargs={!r}>'.format(
             self.__class__.__name__, self.function_name, self.args, self.kwargs
         )
+
+    @contextmanager
+    def set_working_dir(self):
+        """ Spooler uses its own working dir, so it's better to change cwd
+            to initial project dir, cause some path resolution mechanic
+            in Django depends on it, see #3.
+        """
+        current_dir = os.getcwd()
+        working_dir = self.setup.get('working_dir')
+
+        if working_dir and os.path.exists(working_dir):
+            os.chdir(working_dir)
+
+        try:
+            yield
+        finally:
+            os.chdir(current_dir)
 
     def __call__(self, *args, **kwargs):
         if not uwsgi and self.executor != TaskExecutor.RUNTIME:
@@ -192,7 +213,8 @@ class BaseTask(object):
     def execute_now(self):
         logger.info('Executing %r', self)
         setattr(self.function, self.attr_name, self)
-        return self.function(*self.args, **self.kwargs)
+        with self.set_working_dir():
+            return self.function(*self.args, **self.kwargs)
 
     def execute_async(self):
         raise NotImplementedError()

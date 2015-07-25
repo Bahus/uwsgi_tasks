@@ -1,13 +1,13 @@
 # UWSGI Tasks engine
 
-This package makes it to use [UWSGI signal framework](http://uwsgi-docs.readthedocs.org/en/latest/Signals.html) 
+This package makes it to use [UWSGI signal framework](http://uwsgi-docs.readthedocs.org/en/latest/Signals.html)
 for asynchronous tasks management. It's more functional and flexible than [cron scheduler](https://wikipedia.org/wiki/Cron), and
 can be used as replacement for [celery](http://www.celeryproject.org/) in many cases.
 
 ## Requirements
 
 The module works only in [UWSGI web server](https://uwsgi-docs.readthedocs.org/en/latest/) environment,
-you also may have to setup some [mules](https://uwsgi-docs.readthedocs.org/en/latest/Mules.html) or\and [spooler processes](http://uwsgi-docs.readthedocs.org/en/latest/Spooler.html) as described in UWSGI documentation. 
+you also may have to setup some [mules](https://uwsgi-docs.readthedocs.org/en/latest/Mules.html) or\and [spooler processes](http://uwsgi-docs.readthedocs.org/en/latest/Spooler.html) as described in UWSGI documentation.
 
 ## Installation
 
@@ -19,7 +19,7 @@ Simple execute `pip install uwsgi_tasks`
 
 **Use case**: you have Django project and want to send all emails asynchronously.
 
-Setup some mules with `--mule` or `--mules=<N>` parameters, or some spooler 
+Setup some mules with `--mule` or `--mules=<N>` parameters, or some spooler
 processes with `--spooler==<path_to_spooler_folder>`.
 
 Then write:
@@ -36,7 +36,7 @@ set_uwsgi_callbacks()
 def send_email_async(subject, body, email_to):
     # Execute task asynchronously on first available spooler
     return send_mail(subject, body, 'noreply@domain.com', [email_to])
- 
+
 ...
 
 def my_view():
@@ -44,7 +44,7 @@ def my_view():
     send_email_async('Welcome!', 'Thank you!', 'user@domain.com')
 ```
 
-Execution of `send_email_async` will not block execution of `my_view`, since 
+Execution of `send_email_async` will not block execution of `my_view`, since
 function will be called by first available spooler. I personally recommend to use spoolers rather than mules for several reasons:
 
 1. Task will be executed\retried even if uwsgi is crashed or restarted, since task information stored in files.
@@ -55,10 +55,14 @@ function will be called by first available spooler. I personally recommend to us
 
 The following tasks execution backends are supported:
 
-* `AUTO` - default mode, mule will be used if it is available and _pickled_ task's arguments less than 64 KB in size, otherwise spooler will be used. If spooler is not available, than task is executed at runtime.
+* `AUTO` - default mode, spooler will be used if available, otherwise mule will be used. If mule is not available, than task is executed at runtime.
 * `MULE` - execute decorated task on first available mule
 * `SPOOLER` - execute decorated task on spooler
 * `RUNTIME` - execute task at runtime, this backend is also used in case `uwsgi` module can't be imported, e.g. tests.
+
+Common task parameters are:
+
+* `working_dir` - absolute path to execute task in. You won't typically need to provide this value, since it will be provided automatically: as soon as you execute the task current working directory will be saved and sent to spooler or mule. You may pass `None` value to disable this feature.
 
 When `SPOOLER` backend is used, the following additional parameters are supported:
 
@@ -104,7 +108,7 @@ from uwsgi_tasks import RetryTaskException, task, TaskExecutor
 
 @task(executor=TaskExecutor.SPOOLER, retry_count=2)
 def process_purchase(order_id):
-    
+
     try:
         # make something with order id
         ...
@@ -155,7 +159,7 @@ from uwsgi_tasks import *
 @timer(seconds=5)
 def print_every_5_seconds(signal_number):
     """Prints string every 5 seconds
-    
+
     Keep in mind: task is created on initialization.
     """
     print 'Task for signal', signal_number
@@ -164,20 +168,20 @@ def print_every_5_seconds(signal_number):
 def print_every_5_seconds(signal_number):
     """Prints string every 5 seconds 3 times"""
     print 'Task with iterations for signal', signal_number
-    
+
 @timer_lazy(seconds=5)
 def print_every_5_seconds_after_call(signal_number):
     """Prints string every 5 seconds"""
     print 'Lazy task for signal', signal_number
-    
+
 @cron(minute=-2)
 def print_every_2_minutes(signal_number):
     print 'Cron task:', signal_number
-    
+
 @cron_lazy(minute=-2, target='mule')
 def print_every_2_minutes_after_call(signal_number):
     print 'Cron task:', signal_number
-    
+
 ...
 
 def my_view():
@@ -191,7 +195,7 @@ Keep in mind the maximum number of timer-like and cron-like tasks is 256 for eac
 
 ### Task introspection API
 
-Using task introspection API you can get current task object inside current task function and will be able to change some task parameters. You may also use special `buffer` dict-like object to pass data between task execution attempts. Using `get_current_task` you are able to get internal representation of task object and manipulate the attributes of the task, e.g. SpoolerTask object has the following changeable properties: `at`, `retry_count`, `retry_timeout`. 
+Using task introspection API you can get current task object inside current task function and will be able to change some task parameters. You may also use special `buffer` dict-like object to pass data between task execution attempts. Using `get_current_task` you are able to get internal representation of task object and manipulate the attributes of the task, e.g. SpoolerTask object has the following changeable properties: `at`, `retry_count`, `retry_timeout`.
 
 Here is a complex example:
 

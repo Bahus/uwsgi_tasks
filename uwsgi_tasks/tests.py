@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-import mock
-import six
 from datetime import timedelta
 from unittest import TestCase
 
+import os
+import mock
+import six
 from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
     RuntimeTask, manage_mule_request, manage_spool_request, TimerTask,
@@ -94,6 +95,25 @@ def spooler_and_task_introspection(a, b):
     storage(a, b)
     current_task.buffer[b'message'] = u'Hello, World!'
     raise RetryTaskException(timeout=50)
+
+
+SPOOLER_DIR = os.path.expanduser('~')
+
+
+@task(executor=TaskExecutor.SPOOLER)
+def spooler_task_with_cwd_changed():
+    storage()
+
+    current_dir = os.getcwd()
+    assert current_dir != SPOOLER_DIR
+
+
+@task(executor=TaskExecutor.SPOOLER, working_dir=None)
+def spooler_task_with_cwd_not_changed():
+    storage()
+
+    current_dir = os.getcwd()
+    assert current_dir == SPOOLER_DIR
 
 
 def timer_task(signum):
@@ -217,3 +237,27 @@ class TaskTest(TestCase):
 
         self.storage.assert_called_with('a', 1)
         self.assertEqual(2, self.storage.call_count)
+
+    def test_task_working_directory_changed(self):
+        current_dir = os.getcwd()
+
+        with self.patcher as uwsgi_mock:
+            uwsgi_mock.opt = {'spooler': SPOOLER_DIR}
+
+            s_task = spooler_task_with_cwd_changed()
+            message = s_task.get_message_content()
+            os.chdir(SPOOLER_DIR)
+            manage_spool_request(message)
+            self.assertTrue(self.storage.called)
+            self.storage.reset_mock()
+
+            os.chdir(current_dir)
+
+            s_task = spooler_task_with_cwd_not_changed()
+            message = s_task.get_message_content()
+            os.chdir(SPOOLER_DIR)
+            manage_spool_request(message)
+            self.assertTrue(self.storage.called)
+            self.storage.reset_mock()
+
+        os.chdir(current_dir)

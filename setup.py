@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 import io
-import os
 import sys
 import subprocess
+
+import os
 from setuptools import setup
 
 
@@ -36,7 +37,7 @@ def get_long_description():
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.5',
+    version='0.6',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
