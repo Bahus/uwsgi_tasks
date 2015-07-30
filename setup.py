@@ -31,7 +31,7 @@ def get_long_description():
 
     cmd = [path, '--from=markdown', '--to=rst']
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    return p.communicate(readme.encode())[0].decode()
+    return p.communicate(readme.encode('utf8', errors='replace'))[0]
 
 
 setup(
