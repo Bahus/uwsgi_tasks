@@ -119,14 +119,14 @@ Be careful when providing `count` parameter to the exception constructor - it ma
 
 Task execution process can be also controlled via spooler options, see details [here](http://uwsgi-docs.readthedocs.org/en/latest/Spooler.html?highlight=spool_ok#options).
 
-### Project setup:
+### Project setup
 
 There are some requirements to make asynchronous tasks work properly. Let's imagine your Django project has the following directory structure:
 
 ```
 ├── project/
 │   ├── venv/  <-- your virtual environment is placed here
-│   ├── my_project/  <-- Django project (create with "startproject" command)
+│   ├── my_project/  <-- Django project (created with "startproject" command)
 │   │   ├── apps/
 │   │   │   ├── index/  <-- Single Django application ("startapp" command)
 │   │   │   │   ├── __init__.py
@@ -174,7 +174,7 @@ from uwsgi_tasks import set_uwsgi_callbacks
 set_uwsgi_callbacks()
 ```
 
-Task functions (decorated with @task) may be placed in any file where they can be imported.
+Task functions (decorated with `@task`) may be placed in any file where they can be imported, e.g. `apps/index/tasks.py`.
 
 If you still receive some strange errors when running asynchronous tasks, e. g.
 "uwsgi unable to find the spooler function" or "ImproperlyConfigured Django exception", you may try
@@ -184,16 +184,17 @@ into this file:
 
 ```python
 # my_project/__init__.py
-... set_uwsgi_callbacks code ...
+# ... set_uwsgi_callbacks code ...
 
-# if you use Django, otherwise use initialization related to your framework\project
+# if you use Django, otherwise use
+# initialization related to your framework\project
 from uwsgi_tasks import django_setup
 
 django_setup()
 ```
 
-Also make sure you **did't override** uwsgi callbacks with this code
-`from uwsgidecorators import *` somewhere in your code.
+Also make sure you **didn't override** uwsgi callbacks with this code
+`from uwsgidecorators import *` somewhere in your project.
 
 If nothing helps - please submit a issue.
 
