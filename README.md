@@ -27,10 +27,7 @@ Then write:
 ```python
 # myapp/__init__.py
 from django.core.mail import send_mail
-from uwsgi_tasks import task, TaskExecutor, set_uwsgi_callbacks
-
-# set default callbacks for mules and spoolers
-set_uwsgi_callbacks()
+from uwsgi_tasks import task, TaskExecutor
 
 @task(executor=TaskExecutor.SPOOLER)
 def send_email_async(subject, body, email_to):
@@ -124,30 +121,94 @@ Task execution process can be also controlled via spooler options, see details [
 
 ### Project setup:
 
-Tasks should be imported on project initialization, thus if you use Django, you may place your tasks in `app/tasks.py` file and import them in `app/__init__.py`:
+There are some requirements to make asynchronous tasks work properly. Let's imagine your Django project has the following directory structure:
 
-```python
-# app/__init__.py
-from .tasks import *
+```
+├── project/
+│   ├── venv/  <-- your virtual environment is placed here
+│   ├── my_project/  <-- Django project (create with "startproject" command)
+│   │   ├── apps/
+│   │   │   ├── index/  <-- Single Django application ("startapp" command)
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── admin.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── tasks.py
+│   │   │   │   ├── tests.py
+│   │   │   │   ├── views.py
+│   │   │   ├── __init__.py
+│   │   ├── __init__.py
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   ├── spooler/  <-- spooler files are created here
 ```
 
-If Django's version is >= 1.7, you are encouraged to use `AppConfig.ready` method as described in official [documentation](https://docs.djangoproject.com/en/1.7/ref/applications/#configuring-applications):
+Minimum working UWSGI configuration is placed in `uwsgi.ini` file:
 
-```python
-from importlib import import_module
-from django.apps import AppConfig
+```ini
+[uwsgi]
+http-socket=127.0.0.1:8080
+processes=1
+workers=1
 
-class IndexConfig(AppConfig):
-    name = 'project.apps.index'
-    verbose_name = 'Just index page'
+# python path setup
+module=django.core.wsgi:get_wsgi_application()
+# absolute path to the virtualenv directory
+venv=<base_path>/project/venv/
+# Django project directory is placed here:
+pythonpath=<base_path>/project/
+# "importable" path for Django settings
+env=DJANGO_SETTINGS_MODULE=my_project.settings
 
-    def ready(self):
-        import_module('.tasks', self.name)
+# spooler setup
+spooler=<base_path>/project/spooler
+spooler-processes=2
+spooler-frequency=10
 ```
 
-It's necessary to setup required uwsgi callbacks at project's initialization, you should call `set_uwsgi_callbacks` in your `project/__init__.py` file. Don't do `from uwsgidecorators import *`, otherwise you will override callbacks.
+In such configuration you should put the following code into `my_project/__init__.py` file:
 
-Make sure task's arguments must be [pickable](http://stackoverflow.com/questions/3603581/what-does-it-mean-for-an-object-to-be-picklable-or-pickle-able), since they are serialized and send via socket (mule) or file (spooler).
+```python
+# my_project/__init__.py
+from uwsgi_tasks import set_uwsgi_callbacks
+
+set_uwsgi_callbacks()
+```
+
+Task functions (decorated with @task) may be placed in any file where they can be imported.
+
+If you still receive some strange errors when running asynchronous tasks, e. g.
+"uwsgi unable to find the spooler function" or "ImproperlyConfigured Django exception", you may try
+the following: add to uwsgi configuration new variable `spooler-import=my_project` - it will force spooler
+to import `my_project/__init__.py` file when starting, then add Django initialization
+into this file:
+
+```python
+# my_project/__init__.py
+... set_uwsgi_callbacks code ...
+
+# if you use Django, otherwise use initialization related to your framework\project
+from uwsgi_tasks import django_setup
+
+django_setup()
+```
+
+Also make sure you **did't override** uwsgi callbacks with this code
+`from uwsgidecorators import *` somewhere in your code.
+
+If nothing helps - please submit a issue.
+
+If you want to run some cron or timer-like tasks on project initialization you
+may import them in the same file:
+
+```python
+# my_project/__init__.py
+# ... set_uwsgi_callbacks
+
+from my_cron_tasks import *
+from my_timer_tasks import *
+```
+
+Keep in mind that task arguments must be [pickable](http://stackoverflow.com/questions/3603581/what-does-it-mean-for-an-object-to-be-picklable-or-pickle-able), since they are serialized and send via socket (mule) or file (spooler).
 
 ### Timers, red-black timers and cron
 
