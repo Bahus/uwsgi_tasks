@@ -300,3 +300,19 @@ def remove_files_sequentially(previous_selected_file=None):
     # run in async mode
     return current_task(selected_file)
 ```
+
+#### Changing task configuration before execution
+
+You may use `add_setup` method to change some task-related settings before (or during) task execution process. The following example shows how to change timer's timeout and iterations amount at runtime:
+
+```python
+from uwsgi_tasks import timer_lazy
+
+@timer_lazy(target='worker')
+def run_me_periodically(signal):
+    print('Running with signal:', signal)
+
+def my_view(request):
+    run_me_periodically.add_setup(seconds=10, iterations=2)
+    run_me_periodically()
+```
