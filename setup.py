@@ -43,7 +43,7 @@ def get_long_description():
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.6.3',
+    version='0.6.4',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
