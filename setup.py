@@ -17,7 +17,6 @@ if sys.argv[-1] == 'test':
 def get_long_description():
     with io.open('./README.md', encoding='utf-8') as f:
         readme = f.read()
-
     path = None
     pandoc_paths = ('/usr/local/bin/pandoc', '/usr/bin/pandoc')
     for p in pandoc_paths:
@@ -31,8 +30,15 @@ def get_long_description():
 
     cmd = [path, '--from=markdown', '--to=rst']
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    return p.communicate(readme.encode('utf8', errors='replace'))[0]
 
+    doc = readme.encode('utf8', errors='replace')
+    rst = p.communicate(doc)[0]
+
+    if sys.version_info[0] > 2:
+        # PY3
+        return rst.decode()
+    else:
+        return rst
 
 setup(
     name='uwsgi-tasks',
