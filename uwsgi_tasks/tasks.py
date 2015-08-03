@@ -210,6 +210,9 @@ class BaseTask(object):
 
         return self._function
 
+    def add_setup(self, **kwargs):
+        self.setup.update(kwargs)
+
     def execute_now(self):
         logger.info('Executing %r', self)
         setattr(self.function, self.attr_name, self)
