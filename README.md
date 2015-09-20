@@ -64,7 +64,7 @@ Common task parameters are:
 When `SPOOLER` backend is used, the following additional parameters are supported:
 
 * `priority` - **string** related to priority of this task, larger = less important, so you can simply use digits. `spooler-ordered` uwsgi parameter must be set for this feature to work (in linux only?).
-* `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object.
+* `at` - UNIX timestamp or Python **datetime** or Python **timedelta** object – when task must be executed.
 * `spooler_return` - boolean value, `False` by default. If `True` is passed, you can return spooler codes from function, e.g. `SPOOL_OK`, `SPOOL_RETRY` and `SPOOL_IGNORE`.
 * `retry_count` - how many times spooler should repeat the task if it returns `SPOOL_RETRY` code, implies `spooler_return=True`.
 * `retry_timeout` - how many seconds between attempts spooler should wait to execute the task. Actual timeout depends on `spooler-frequency` parameter. Python **timedelta** object is also supported.
@@ -196,7 +196,7 @@ django_setup()
 Also make sure you **didn't override** uwsgi callbacks with this code
 `from uwsgidecorators import *` somewhere in your project.
 
-If nothing helps - please submit a issue.
+If nothing helps - please submit an issue.
 
 If you want to run some cron or timer-like tasks on project initialization you
 may import them in the same file:
