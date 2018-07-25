@@ -316,9 +316,13 @@ class SpoolerTask(BaseTask):
         if len(repr(message_dict)) >= UWSGI_MAXIMUM_MESSAGE_SIZE:
             # message too long for spooler - we have to use `body` parameter
             message_dict = base_message_dict
-            message_dict['body'] = pickle.dumps({
-                'args': self.args,
-                'kwargs': self.kwargs,
+            message_dict.update({
+                'args': pickle.dumps(()),
+                'kwargs': pickle.dumps({}),
+                'body': pickle.dumps({
+                    'args': self.args,
+                    'kwargs': self.kwargs,
+                })
             })
 
         return self._encode_message(message_dict)

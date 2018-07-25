@@ -3,7 +3,12 @@ from datetime import timedelta
 from unittest import TestCase
 
 import os
-import mock
+import pickle
+try:
+    import mock     # Python 2
+except ImportError:
+    from unittest import mock    # Python 3
+
 import six
 from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
@@ -237,6 +242,19 @@ class TaskTest(TestCase):
 
         self.storage.assert_called_with('a', 1)
         self.assertEqual(2, self.storage.call_count)
+
+    def test_spooler_task_large_args_in_body(self):
+        large_arg = 'b' * 64 * 1024
+        with self.patcher as uwsgi_mock:
+            uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
+            s_task = spooler_task('a', large_arg)
+            message = s_task.get_message_content()
+
+            self.assertEqual(message[b'args'], pickle.dumps(()))
+            self.assertEqual(message[b'kwargs'], pickle.dumps({}))
+            manage_spool_request(message)
+
+        self.storage.assert_called_once_with('a', large_arg)
 
     def test_task_working_directory_changed(self):
         current_dir = os.getcwd()
