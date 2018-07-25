@@ -3,11 +3,13 @@ from datetime import timedelta
 from unittest import TestCase
 
 import os
-import pickle
+
 try:
     import mock     # Python 2
+    from six.moves import cPickle as pickle
 except ImportError:
     from unittest import mock    # Python 3
+    import pickle
 
 import six
 from uwsgi_tasks.utils import import_by_path, get_function_path
@@ -250,8 +252,13 @@ class TaskTest(TestCase):
             s_task = spooler_task('a', large_arg)
             message = s_task.get_message_content()
 
-            self.assertEqual(message[b'args'], pickle.dumps(()))
-            self.assertEqual(message[b'kwargs'], pickle.dumps({}))
+            expected_args = s_task._encode_message({
+                'args': pickle.dumps(()),
+                'kwargs': pickle.dumps({}),
+            })
+
+            self.assertEqual(message[b'args'], expected_args[b'args'])
+            self.assertEqual(message[b'kwargs'], expected_args[b'kwargs'])
             manage_spool_request(message)
 
         self.storage.assert_called_once_with('a', large_arg)
