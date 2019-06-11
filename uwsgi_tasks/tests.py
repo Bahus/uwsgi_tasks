@@ -6,16 +6,14 @@ import os
 
 try:
     import mock     # Python 2
-    from six.moves import cPickle as pickle
 except ImportError:
     from unittest import mock    # Python 3
-    import pickle
 
 import six
 from uwsgi_tasks.utils import import_by_path, get_function_path
 from uwsgi_tasks.tasks import (
     RuntimeTask, manage_mule_request, manage_spool_request, TimerTask,
-    get_current_task, SpoolerTask
+    get_current_task, SpoolerTask, serialize
 )
 from uwsgi_tasks import task, TaskExecutor, RetryTaskException, SPOOL_OK
 
@@ -125,6 +123,11 @@ def spooler_task_with_cwd_not_changed():
 
 def timer_task(signum):
     storage(signum)
+
+
+@task(executor=TaskExecutor.RUNTIME)
+def runtime_task(*args, **kwargs):
+    return True
 
 
 class TaskTest(TestCase):
@@ -253,8 +256,8 @@ class TaskTest(TestCase):
             message = s_task.get_message_content()
 
             expected_args = s_task._encode_message({
-                'args': pickle.dumps(()),
-                'kwargs': pickle.dumps({}),
+                'args': serialize(()),
+                'kwargs': serialize({}),
             })
 
             self.assertEqual(message[b'args'], expected_args[b'args'])
@@ -286,3 +289,10 @@ class TaskTest(TestCase):
             self.storage.reset_mock()
 
         os.chdir(current_dir)
+
+    def test_runtime_task_pickling(self):
+        runtime_task('args', {'kw': 'args'})
+        with self.assertRaises(Exception):
+            runtime_task(lambda x: x, {'kw': 'args'})
+        with self.assertRaises(Exception):
+            runtime_task('args', {'kw': lambda x: x})
