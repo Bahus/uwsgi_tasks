@@ -55,6 +55,14 @@ saved_tasks = threading.local()
 logger = logging.getLogger('uwsgi_tasks')
 
 
+def serialize(content):
+    return pickle.dumps(content)
+
+
+def deserialize(serialized):
+    return pickle.loads(serialized)
+
+
 def load_function(func_name):
     func = getattr(saved_tasks, func_name, None)
     if func:
@@ -230,6 +238,11 @@ class BaseTask(object):
 class RuntimeTask(BaseTask):
     executor = TaskExecutor.RUNTIME
 
+    def execute_now(self):
+        serialize(self.args)
+        serialize(self.kwargs)
+        super(RuntimeTask, self).execute_now()
+
     def execute_async(self):
         return self.execute_now()
 
@@ -245,11 +258,11 @@ class MuleTask(BaseTask):
 
     def get_message_content(self):
         # TODO: cache?
-        return pickle.dumps({self.mule_task_id: self})
+        return serialize({self.mule_task_id: self})
 
     @classmethod
     def extract_from_message(cls, message):
-        msg = pickle.loads(message)
+        msg = deserialize(message)
         mule_task = msg.get(cls.mule_task_id)
 
         if mule_task is None:
@@ -287,7 +300,7 @@ class SpoolerTask(BaseTask):
 
     def get_message_content(self):
         base_message_dict = self.__getstate__()
-        base_message_dict['setup'] = pickle.dumps(self.setup)
+        base_message_dict['setup'] = serialize(self.setup)
 
         for key in self.spooler_default_arguments:
             if key in self.setup:
@@ -309,17 +322,17 @@ class SpoolerTask(BaseTask):
 
         message_dict = base_message_dict.copy()
         message_dict.update({
-            'args': pickle.dumps(self.args),
-            'kwargs': pickle.dumps(self.kwargs)
+            'args': serialize(self.args),
+            'kwargs': serialize(self.kwargs)
         })
 
         if len(repr(message_dict)) >= UWSGI_MAXIMUM_MESSAGE_SIZE:
             # message too long for spooler - we have to use `body` parameter
             message_dict = base_message_dict
             message_dict.update({
-                'args': pickle.dumps(()),
-                'kwargs': pickle.dumps({}),
-                'body': pickle.dumps({
+                'args': serialize(()),
+                'kwargs': serialize({}),
+                'body': serialize({
                     'args': self.args,
                     'kwargs': self.kwargs,
                 })
@@ -441,14 +454,14 @@ class SpoolerTask(BaseTask):
             return None
 
         if 'body' in message:
-            body = pickle.loads(message['body'])
+            body = deserialize(message['body'])
             args = body['args']
             kwargs = body['kwargs']
         else:
-            args = pickle.loads(message['args'])
-            kwargs = pickle.loads(message['kwargs'])
+            args = deserialize(message['args'])
+            kwargs = deserialize(message['kwargs'])
 
-        setup = pickle.loads(message.get('setup'))
+        setup = deserialize(message.get('setup'))
 
         return cls(
             function=func_name,
