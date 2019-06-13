@@ -20,7 +20,7 @@ def get_long_description():
 setup(
     name='uwsgi-tasks',
     packages=['uwsgi_tasks'],
-    version='0.7.2',
+    version='0.7.3',
     description='Asynchronous tasks management with UWSGI server',
     author='Oleg Churkin',
     author_email='bahusoff@gmail.com',
@@ -34,7 +34,7 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3',
         'Topic :: Software Development :: Libraries :: Python Modules',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License'
