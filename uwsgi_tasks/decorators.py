@@ -1,61 +1,123 @@
-# -*- coding: utf-8 -*-
-from uwsgi_tasks.tasks import Task, TaskExecutor, TimerTask, CronTask
+from __future__ import annotations
 
-__all__ = ('task', 'timer', 'timer_lazy', 'cron', 'cron_lazy')
+from typing import Callable, Any, TypeVar, Optional
+
+from .tasks import Task, TaskExecutor, TimerTask, CronTask, SignalTask
+
+CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
 
-def task(func=None, executor=TaskExecutor.AUTO, **setup):
+def task(
+    func: Optional[CallableT] = None,
+    executor: int = TaskExecutor.AUTO,
+    **setup: Any,
+) -> Callable[[CallableT], Task] | Task:
+    """A decorator to create a task that can be executed asynchronously."""
 
-    def create_task(function):
+    def create_task(function: CallableT) -> Task:
         return Task(function, executor, **setup)
 
-    if callable(func):
-        return create_task(func)
-    else:
-        return lambda f: create_task(f)
+    if func is None:
+        return create_task
+    return create_task(func)
 
 
-def timer(func=None, seconds=0, iterations=None,
-          executor=TaskExecutor.AUTO, **setup):
-    """Create timer on initialization"""
+def timer(
+    func: Optional[CallableT] = None,
+    seconds: int = 0,
+    iterations: Optional[int] = None,
+    executor: int = TaskExecutor.AUTO,
+    **setup: Any,
+) -> Callable[[CallableT], TimerTask] | TimerTask:
+    """A decorator to create a timer task that runs on initialization."""
     return timer_lazy(
         func=func,
         seconds=seconds,
         iterations=iterations,
         executor=executor,
         run=True,
-        **setup
+        **setup,
     )
 
 
-def timer_lazy(func=None, seconds=0, iterations=None,
-               executor=TaskExecutor.AUTO, run=False, **setup):
-    """Create task on execution"""
+def timer_lazy(
+    func: Optional[CallableT] = None,
+    seconds: int = 0,
+    iterations: Optional[int] = None,
+    executor: int = TaskExecutor.AUTO,
+    run: bool = False,
+    **setup: Any,
+) -> Callable[[CallableT], TimerTask] | TimerTask:
+    """A decorator to create a timer task that can be executed on demand."""
 
-    def inner(function):
+    def inner(function: CallableT) -> TimerTask:
         timer_task = TimerTask(
             function=function,
             executor=executor,
             seconds=seconds,
             iterations=iterations,
-            **setup
+            **setup,
         )
 
         if run:
             return timer_task()
-        else:
-            timer_task.register_signal()
-            return timer_task
+
+        timer_task.register_signal()
+        return timer_task
 
     if func is None:
         return inner
-
     return inner(func)
 
 
-def cron(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
-         executor=TaskExecutor.AUTO, **setup):
-    """Creates cron-like task on initialization"""
+def rbtimer(
+    func: Optional[CallableT] = None,
+    seconds: int = 0,
+    iterations: int = 1,
+    executor: int = TaskExecutor.AUTO,
+    **setup: Any,
+) -> Callable[[CallableT], TimerTask] | TimerTask:
+    """A decorator to create a red-black timer task that runs on initialization."""
+    return rbtimer_lazy(
+        func=func,
+        seconds=seconds,
+        iterations=iterations,
+        executor=executor,
+        run=True,
+        **setup,
+    )
+
+
+def rbtimer_lazy(
+    func: Optional[CallableT] = None,
+    seconds: int = 0,
+    iterations: int = 1,
+    executor: int = TaskExecutor.AUTO,
+    run: bool = False,
+    **setup: Any,
+) -> Callable[[CallableT], TimerTask] | TimerTask:
+    """A decorator to create a red-black timer task that can be executed on demand."""
+    return timer_lazy(
+        func=func,
+        seconds=seconds,
+        iterations=iterations,
+        executor=executor,
+        run=run,
+        **setup,
+    )
+
+
+def cron(
+    func: Optional[CallableT] = None,
+    minute: int = -1,
+    hour: int = -1,
+    day: int = -1,
+    month: int = -1,
+    dayweek: int = -1,
+    executor: int = TaskExecutor.AUTO,
+    **setup: Any,
+) -> Callable[[CallableT], CronTask] | CronTask:
+    """A decorator to create a cron-like task that runs on initialization."""
     return cron_lazy(
         func=func,
         minute=minute,
@@ -65,15 +127,24 @@ def cron(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
         dayweek=dayweek,
         executor=executor,
         run=True,
-        **setup
+        **setup,
     )
 
 
-def cron_lazy(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
-              executor=TaskExecutor.AUTO, run=False, **setup):
-    """Creates cron-like task on execution"""
+def cron_lazy(
+    func: Optional[CallableT] = None,
+    minute: int = -1,
+    hour: int = -1,
+    day: int = -1,
+    month: int = -1,
+    dayweek: int = -1,
+    executor: int = TaskExecutor.AUTO,
+    run: bool = False,
+    **setup: Any,
+) -> Callable[[CallableT], CronTask] | CronTask:
+    """A decorator to create a cron-like task that can be executed on demand."""
 
-    def inner(function):
+    def inner(function: CallableT) -> CronTask:
         cron_task = CronTask(
             function=function,
             executor=executor,
@@ -82,15 +153,53 @@ def cron_lazy(func=None, minute=-1, hour=-1, day=-1, month=-1, dayweek=-1,
             day=day,
             month=month,
             dayweek=dayweek,
-            **setup
+            **setup,
         )
 
         if run:
             return cron_task()
-        else:
-            return cron_task
+        return cron_task
 
     if func is None:
         return inner
+    return inner(func)
 
+
+def signal(
+    func: Optional[CallableT] = None,
+    executor: int = TaskExecutor.AUTO,
+    **setup: Any,
+) -> Callable[[CallableT], SignalTask] | SignalTask:
+    """A decorator to create a signal task that runs on initialization."""
+    return signal_lazy(
+        func=func,
+        executor=executor,
+        run=True,
+        **setup,
+    )
+
+
+def signal_lazy(
+    func: Optional[CallableT] = None,
+    executor: int = TaskExecutor.AUTO,
+    run: bool = False,
+    **setup: Any,
+) -> Callable[[CallableT], SignalTask] | SignalTask:
+    """A decorator to create a signal task that can be executed on demand."""
+
+    def inner(function: CallableT) -> SignalTask:
+        signal_task = SignalTask(
+            function=function,
+            executor=executor,
+            **setup,
+        )
+
+        if run:
+            return signal_task()
+
+        signal_task.register_signal()
+        return signal_task
+
+    if func is None:
+        return inner
     return inner(func)

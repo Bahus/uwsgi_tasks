@@ -1,31 +1,28 @@
-# -*- coding: utf-8 -*-
-from datetime import timedelta
-from unittest import TestCase
-
 import os
+from datetime import timedelta
+from unittest import TestCase, mock
 
-try:
-    import mock     # Python 2
-except ImportError:
-    from unittest import mock    # Python 3
-
-import six
-from uwsgi_tasks.utils import import_by_path, get_function_path
+from uwsgi_tasks import TaskExecutor, RetryTaskException, SPOOL_OK, task
 from uwsgi_tasks.tasks import (
-    RuntimeTask, manage_mule_request, manage_spool_request, TimerTask,
-    get_current_task, SpoolerTask, serialize
+    RuntimeTask,
+    TimerTask,
+    SpoolerTask,
+    get_current_task,
+    manage_mule_request,
+    manage_spool_request,
+    serialize,
 )
-from uwsgi_tasks import task, TaskExecutor, RetryTaskException, SPOOL_OK
+from uwsgi_tasks.utils import import_by_path, get_function_path
 
 
-def local_function(value):
+def local_function(value: int) -> int:
     return value ** 2
 
 
 class UtilsTest(TestCase):
-    builtin_module = '__builtin__' if six.PY2 else 'builtins'
+    builtin_module = 'builtins'
 
-    def test_import_by_path(self):
+    def test_import_by_path(self) -> None:
         with self.assertRaises(ImportError):
             import_by_path('len')
 
@@ -35,26 +32,15 @@ class UtilsTest(TestCase):
         main = __import__('__main__')
         main.local_function = local_function
 
-        self.assertTrue(local_function is import_by_path('local_function'))
+        self.assertIs(local_function, import_by_path('local_function'))
+        self.assertIs(local_function, import_by_path('uwsgi_tasks.tests.local_function'))
+        self.assertIs(len, import_by_path(f'{self.builtin_module}.len'))
 
-        self.assertTrue(
-            local_function is import_by_path('uwsgi_tasks.tests.local_function')
-        )
-        self.assertTrue(len is import_by_path('{}.len'.format(
-            self.builtin_module)))
+    def test_get_function_path(self) -> None:
+        self.assertEqual(get_function_path(local_function), 'uwsgi_tasks.tests.local_function')
+        self.assertEqual(get_function_path(len), f'{self.builtin_module}.len')
 
-    def test_get_function_path(self):
-        self.assertEqual(
-            get_function_path(local_function),
-            'uwsgi_tasks.tests.local_function'
-        )
-
-        self.assertEqual(
-            get_function_path(len),
-            '{}.len'.format(self.builtin_module)
-        )
-
-        def nested():
+        def nested() -> None:
             pass
 
         self.assertEqual(get_function_path(nested), 'uwsgi_tasks.tests.nested')
@@ -64,24 +50,23 @@ storage = mock.MagicMock()
 
 
 @task(executor=TaskExecutor.MULE)
-def mule_task(a, b, c='3', d='4'):
+def mule_task(a: int, b: int, c: str = '3', d: str = '4') -> None:
     storage(a, b, c, d)
 
 
 @task(executor=TaskExecutor.SPOOLER, priority='10', at=timedelta(seconds=10))
-def spooler_task(a, b=None):
+def spooler_task(a: int, b: str | None = None) -> None:
     storage(a, b)
 
 
 @task(executor=TaskExecutor.SPOOLER, retry_count=2)
-def spooler_retry_task(g, h):
+def spooler_retry_task(g: int, h: int) -> None:
     storage(g, h)
     raise RetryTaskException(timeout=10)
 
 
-@task(executor=TaskExecutor.SPOOLER, retry_count=2,
-      retry_timeout=timedelta(seconds=20))
-def spooler_and_task_introspection(a, b):
+@task(executor=TaskExecutor.SPOOLER, retry_count=2, retry_timeout=timedelta(seconds=20))
+def spooler_and_task_introspection(a: str, b: int) -> None:
     current_task = get_current_task()
     assert isinstance(current_task, SpoolerTask)
     assert current_task.executor == TaskExecutor.SPOOLER
@@ -91,14 +76,14 @@ def spooler_and_task_introspection(a, b):
         assert current_task.retry_timeout == 50
         assert current_task.at == timedelta(seconds=50)
         assert len(current_task.buffer) == 1
-        assert current_task.buffer[b'message'] == u'Hello, World!'
+        assert current_task.buffer['message'] == 'Hello, World!'
     else:
         assert current_task.executor == TaskExecutor.SPOOLER
         assert current_task.retry_count == 2
         assert current_task.retry_timeout == 20
 
     storage(a, b)
-    current_task.buffer[b'message'] = u'Hello, World!'
+    current_task.buffer['message'] = 'Hello, World!'
     raise RetryTaskException(timeout=50)
 
 
@@ -106,191 +91,148 @@ SPOOLER_DIR = os.path.expanduser('~')
 
 
 @task(executor=TaskExecutor.SPOOLER)
-def spooler_task_with_cwd_changed():
+def spooler_task_with_cwd_changed() -> None:
     storage()
-
     current_dir = os.getcwd()
     assert current_dir != SPOOLER_DIR
 
 
 @task(executor=TaskExecutor.SPOOLER, working_dir=None)
-def spooler_task_with_cwd_not_changed():
+def spooler_task_with_cwd_not_changed() -> None:
     storage()
-
     current_dir = os.getcwd()
     assert current_dir == SPOOLER_DIR
 
 
-def timer_task(signum):
+def timer_task(signum: int) -> None:
     storage(signum)
 
 
 @task(executor=TaskExecutor.RUNTIME)
-def runtime_task(*args, **kwargs):
+def runtime_task(*args, **kwargs) -> bool:
     return True
 
 
 class TaskTest(TestCase):
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.storage = storage
         self.storage.reset_mock()
         self.patcher = mock.patch('uwsgi_tasks.tasks.uwsgi')
 
-    def test_runtime_task_execution(self):
-
-        def runtime_task(a, b, c=None):
+    def test_runtime_task_execution(self) -> None:
+        def rt_func(a: int, b: int, c: int | None = None) -> None:
             self.storage(a, b, c=c)
 
-        runtime_task = RuntimeTask(runtime_task)
-
-        runtime_task(1, 2, c=3)
+        rt = RuntimeTask(rt_func)
+        rt(1, 2, c=3)
         self.storage.assert_called_once_with(1, 2, c=3)
 
-        runtime_task(4, '2')
+        rt(4, '2')
         self.storage.assert_called_with(4, '2', c=None)
 
         with self.assertRaises(TypeError):
-            runtime_task()
+            rt()
 
-    def test_task_is_executed_at_runtime_if_uwsgi_not_available(self):
+    def test_task_is_executed_at_runtime_if_uwsgi_not_available(self) -> None:
         mule_task(4, 5, '6', '7')
         self.storage.assert_called_once_with(4, 5, '6', '7')
 
-    def test_mule_task_execution_became_runtime(self):
-        # 'mule' not in uwsgi.opt, so it goes to runtime
+    def test_mule_task_execution_became_runtime(self) -> None:
         with self.patcher:
             mule_task(4, 7, '8')
-
         self.storage.assert_called_with(4, 7, '8', '4')
 
-    def test_mule_task_execution(self):
+    def test_mule_task_execution(self) -> None:
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'mule': 1}
-            m_task = mule_task(6, 6,  u'a', u'кириллический')
-
+            m_task = mule_task(6, 6, 'a', 'кириллический')
             message = m_task.get_message_content()
-            uwsgi_mock.mule_msg.assert_called_with(
-                message, m_task.default_mule_id
-            )
+            uwsgi_mock.mule_msg.assert_called_with(message, m_task.default_mule_id)
             manage_mule_request(message)
+        self.storage.assert_called_once_with(6, 6, 'a', 'кириллический')
 
-        self.storage.assert_called_once_with(6, 6, u'a', u'кириллический')
-
-    def test_spooler_task_execution(self):
+    def test_spooler_task_execution(self) -> None:
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
             uwsgi_mock.SPOOL_OK = SPOOL_OK
-
             s_task = spooler_task(0, '1')
             message = s_task.get_message_content()
-
             self.assertEqual(message[b'priority'], b'10')
             uwsgi_mock.spool.assert_called_with(message)
             manage_spool_request(message)
-
         self.storage.assert_called_once_with(0, '1')
 
-    def test_rb_timer_task_execution(self):
+    def test_rb_timer_task_execution(self) -> None:
         with self.patcher as uwsgi_mock:
-            t_task = TimerTask(
-                timer_task,
-                signal=10,
-                seconds=5,
-                iterations=3,
-                target='workers'
-            )
-
+            uwsgi_mock.signal_registered.return_value = False
+            t_task = TimerTask(timer_task, seconds=5, iterations=3, target='workers')
+            t_task.setup['signal'] = 10
             t_task()
-
-            uwsgi_mock.register_signal.assert_called_once_with(
-                10, 'workers', t_task.signal_handler
-            )
+            uwsgi_mock.register_signal.assert_called_once_with(10, 'workers', t_task.signal_handler)
             uwsgi_mock.add_rb_timer.assert_called_once_with(10, 5, 3)
-
             t_task.signal_handler(10)
             self.storage.assert_called_once_with(10)
 
-    def test_spooler_retry_on_exception(self):
+    def test_spooler_retry_on_exception(self) -> None:
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
             uwsgi_mock.SPOOL_OK = SPOOL_OK
-
             s_task = spooler_retry_task(666, 777)
             message = s_task.get_message_content()
-
-            self.assertFalse(message.get(b'at'))
-
+            self.assertNotIn(b'at', message)
             uwsgi_mock.spool.assert_called_with(message)
-
             manage_spool_request(message)
             self.storage.assert_called_once_with(666, 777)
             self.assertEqual(2, uwsgi_mock.spool.call_count)
-
             new_message = uwsgi_mock.spool.call_args_list[-1][0][0]
-            self.assertTrue(new_message.get(b'at'))
-
+            self.assertIn(b'at', new_message)
             manage_spool_request(message)
-
         self.assertEqual(2, self.storage.call_count)
 
-    def test_spooler_task_introspection(self):
+    def test_spooler_task_introspection(self) -> None:
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
-
             s_task = spooler_and_task_introspection('a', 1)
             message = s_task.get_message_content()
             manage_spool_request(message)
-
             new_message = uwsgi_mock.spool.call_args_list[-1][0][0]
             manage_spool_request(new_message)
-
         self.storage.assert_called_with('a', 1)
         self.assertEqual(2, self.storage.call_count)
 
-    def test_spooler_task_large_args_in_body(self):
+    def test_spooler_task_large_args_in_body(self) -> None:
         large_arg = 'b' * 64 * 1024
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': '/tmp/spooler'}
             s_task = spooler_task('a', large_arg)
             message = s_task.get_message_content()
-
-            expected_args = s_task._encode_message({
-                'args': serialize(()),
-                'kwargs': serialize({}),
-            })
-
+            expected_args = SpoolerTask._encode_message({'args': serialize(()), 'kwargs': serialize({})})
             self.assertEqual(message[b'args'], expected_args[b'args'])
             self.assertEqual(message[b'kwargs'], expected_args[b'kwargs'])
             manage_spool_request(message)
-
         self.storage.assert_called_once_with('a', large_arg)
 
-    def test_task_working_directory_changed(self):
+    def test_task_working_directory_changed(self) -> None:
         current_dir = os.getcwd()
-
         with self.patcher as uwsgi_mock:
             uwsgi_mock.opt = {'spooler': SPOOLER_DIR}
-
             s_task = spooler_task_with_cwd_changed()
             message = s_task.get_message_content()
             os.chdir(SPOOLER_DIR)
             manage_spool_request(message)
             self.assertTrue(self.storage.called)
             self.storage.reset_mock()
-
             os.chdir(current_dir)
-
             s_task = spooler_task_with_cwd_not_changed()
             message = s_task.get_message_content()
             os.chdir(SPOOLER_DIR)
             manage_spool_request(message)
             self.assertTrue(self.storage.called)
             self.storage.reset_mock()
-
         os.chdir(current_dir)
 
-    def test_runtime_task_pickling(self):
+    def test_runtime_task_pickling(self) -> None:
         runtime_task('args', {'kw': 'args'})
         with self.assertRaises(Exception):
             runtime_task(lambda x: x, {'kw': 'args'})

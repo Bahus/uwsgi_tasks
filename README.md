@@ -11,7 +11,17 @@ you also may have to setup some [mules](https://uwsgi-docs.readthedocs.org/en/la
 
 ## Installation
 
-Simple execute `pip install uwsgi_tasks`
+It's recommended to use `uv` for installation:
+
+```bash
+uv pip install uwsgi-tasks
+```
+
+Alternatively, you can use `pip`:
+
+```bash
+pip install uwsgi-tasks
+```
 
 ## Usage
 
@@ -78,14 +88,14 @@ from uwsgi_tasks import task, TaskExecutor, SPOOL_OK, SPOOL_RETRY
 def task_wrapper(func):
     @wraps(func)  # required!
     def _inner(*args, **kwargs):
-        print 'Task started with parameters:', args, kwargs
+        print(f'Task started with parameters: {args} {kwargs}')
         try:
             func(*args, **kwargs)
         except Exception as ex:  # example
-            print 'Exception is occurred', ex, 'repeat the task'
+            print(f'Exception is occurred: {ex}, repeat the task')
             return SPOOL_RETRY
 
-        print 'Task ended', func
+        print(f'Task ended: {func}')
         return SPOOL_OK
 
     return _inner
@@ -93,7 +103,7 @@ def task_wrapper(func):
 @task(executor=TaskExecutor.SPOOLER, retry_count=3, retry_timeout=5)
 @task_wrapper
 def spooler_task(text):
-    print 'Hello, spooler! text =', text
+    print(f'Hello, spooler! text = {text}')
     raise Exception('Sorry, task failed!')
 ```
 
@@ -224,25 +234,25 @@ def print_every_5_seconds(signal_number):
 
     Keep in mind: task is created on initialization.
     """
-    print 'Task for signal', signal_number
+    print(f'Task for signal {signal_number}')
 
 @timer(seconds=5, iterations=3, target='workers')
 def print_every_5_seconds(signal_number):
     """Prints string every 5 seconds 3 times"""
-    print 'Task with iterations for signal', signal_number
+    print(f'Task with iterations for signal {signal_number}')
 
 @timer_lazy(seconds=5)
 def print_every_5_seconds_after_call(signal_number):
     """Prints string every 5 seconds"""
-    print 'Lazy task for signal', signal_number
+    print(f'Lazy task for signal {signal_number}')
 
 @cron(minute=-2)
 def print_every_2_minutes(signal_number):
-    print 'Cron task:', signal_number
+    print(f'Cron task: {signal_number}')
 
 @cron_lazy(minute=-2, target='mule')
 def print_every_2_minutes_after_call(signal_number):
-    print 'Cron task:', signal_number
+    print(f'Cron task: {signal_number}')
 
 ...
 
@@ -310,7 +320,7 @@ from uwsgi_tasks import timer_lazy
 
 @timer_lazy(target='worker')
 def run_me_periodically(signal):
-    print('Running with signal:', signal)
+    print(f'Running with signal: {signal}')
 
 def my_view(request):
     run_me_periodically.add_setup(seconds=10, iterations=2)
